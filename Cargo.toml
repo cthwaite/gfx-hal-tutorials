@@ -1,0 +1,29 @@
+[package]
+name = "haltut"
+version = "0.1.0"
+authors = ["cthwaite <thwaite@mac.com>"]
+
+[dependencies]
+image = "~0.19.0"
+winit = "=0.17.2"
+
+[dependencies.gfx-hal]
+git = "https://github.com/gfx-rs/gfx"
+rev = "76c67c60"
+
+
+[target.'cfg(target_os = "macos")'.dependencies.gfx-backend-metal]
+git = "https://github.com/gfx-rs/gfx"
+rev = "76c67c60"
+
+[target.'cfg(windows)'.dependencies.gfx-backend-dx12]
+git = "https://github.com/gfx-rs/gfx"
+rev = "76c67c60"
+
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies.gfx-backend-vulkan]
+git = "https://github.com/gfx-rs/gfx"
+rev = "76c67c60"
+
+
+[build-dependencies]
+glsl-to-spirv = "=0.1.6"
