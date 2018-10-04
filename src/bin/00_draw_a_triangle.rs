@@ -29,38 +29,54 @@ use gfx_hal::{
 
 use winit::{Event, EventsLoop, KeyboardInput, VirtualKeyCode, WindowBuilder, WindowEvent};
 
-static WIN_TITLE : &'static str = "Part 01: Resizing";
-static VERT_SPIRV : &'static [u8] = include_bytes!("../assets/gen/shaders/part00.vert.spv");
-static FRAG_SPIRV : &'static [u8] = include_bytes!("../assets/gen/shaders/part00.frag.spv");
 
 fn main() {
     let mut events_loop = EventsLoop::new();
     let window = WindowBuilder::new()
-                    .with_title(WIN_TITLE)
+                    .with_title("Part 00: Triangle")
                     .with_dimensions((640, 480).into())
                     .with_decorations(false)
                     .build(&events_loop)
                     .unwrap();
+    // The Instance serves as an entry point to the graphics API; the create
+    // method takes an application name and version, but these aren't important.
+    let instance = backend::Instance::create("Part 00: Triangle", 1);
 
-    let instance = backend::Instance::create(WIN_TITLE, 1);
-
+    // A Surface is an abstraction for the OS's native window.
     let mut surface = instance.create_surface(&window);
+
+    // Just take the first available physical device, which could be a graphics
+    // card or something... else...
     let mut adapter = instance.enumerate_adapters().remove(0);
+
+    // The device is a logical device allowing you to perform GPU operations.
+    // The queue group contains a set of command queues which we can later submit
+    // drawing commands to.
+    //
+    // Here we're requesting one queue with the 'Graphics' capability so we can
+    // do rendering. We also pass a closure to choose the first queue family
+    // that our surface supports, to allocate queues from.
+    let num_queues = 1;
     let (device, mut queue_group) = adapter
-        .open_with::<_, Graphics>(1, |family| surface.supports_queue_family(family))
+        .open_with::<_, Graphics>(num_queues, |family| surface.supports_queue_family(family))
         .unwrap();
 
+    // A command pool is used to acquire command buffers, which are used to
+    // send drawing instructions to the GPU.
+    let max_buffers = 16;
     let mut command_pool = device.create_command_pool_typed(&queue_group,
                                                             CommandPoolCreateFlags::empty(),
-                                                            16);
+                                                            max_buffers);
 
     let physical_device = &adapter.physical_device;
 
-    let (_caps, formats, _) = surface.compatibility(physical_device);
-
-    // ALthough this could change between swapchains, we're going to ignore that
-    // for now...
+    // We want to get the capabilities ('caps') of the surface, which tells us
+    // what parameters we can use for our swapchain later. We also get a list
+    // of supported image formats for our surface.
+    let (caps, formats, _) = surface.compatibility(physical_device);
     let surface_colour_format = {
+        // We pick a colour format from the list of supported formats. If there
+        // is no list, we default to 'Rgba8Srgb'.
         match formats {
             Some(choices) => choices.into_iter()
                                     .find(|format| format.base_format().1 == ChannelType::Srgb)
@@ -69,6 +85,11 @@ fn main() {
         }
     };
 
+    // A render pass defines which 'attachements' (images) are to be used for
+    // what purposes.
+    // Right now, we only have a colour attachment for the final output,
+    // but eventually we might have depth or stencil attachments, or even other
+    // colour attachments for other purposes.
     let render_pass = {
         let colour_attachment = Attachment {
             format: Some(surface_colour_format),
@@ -78,6 +99,7 @@ fn main() {
             layouts: Layout::Undefined..Layout::Present
         };
 
+        // A reder pass oculd have multiple subpasses; we're using one for now.
         let subpass = SubpassDesc {
             colors: &[(0, Layout::ColorAttachmentOptimal)],
             depth_stencil: None,
@@ -86,6 +108,8 @@ fn main() {
             resolves: &[]
         };
 
+        // This expresses the dependencies between subpasses.
+        // Again, we only have one subpass for now.
         let dependency = SubpassDependency {
             passes: SubpassRef::External..SubpassRef::Pass(0),
             stages: PipelineStage::COLOR_ATTACHMENT_OUTPUT..PipelineStage::COLOR_ATTACHMENT_OUTPUT,
@@ -95,10 +119,22 @@ fn main() {
         device.create_render_pass(&[colour_attachment], &[subpass], &[dependency])
     };
 
+    // The pipeline layout defines the shape of the data you can send to a
+    // shader.
+    // This includes the number of uniforms and push constants. We don't need
+    // them for now.
     let pipeline_layout = device.create_pipeline_layout(&[], &[]);
 
-    let vertex_shader_module = device.create_shader_module(VERT_SPIRV).unwrap();
-    let fragment_shader_module = device.create_shader_module(FRAG_SPIRV).unwrap();
+    // Shader modules are needed to create the pipeline definition.
+    // The shaders are loaded from SPIR-V binary files.
+    let vertex_shader_module = {
+        let spirv = include_bytes!("../../assets/gen/shaders/part00.vert.spv");
+        device.create_shader_module(spirv).unwrap()
+    };
+    let fragment_shader_module = {
+        let spirv = include_bytes!("../../assets/gen/shaders/part00.frag.spv");
+        device.create_shader_module(spirv).unwrap()
+    };
 
     // A pipeline object encodes almost all the state you need in order to draw
     // geometry on screen.
@@ -144,21 +180,97 @@ fn main() {
               .unwrap()
     };
 
-    let frame_semaphore = device.create_semaphore();
-    let frame_fence = device.create_fence(false);
+    // Initialize our swapchain, images, framebuffers etc.
+    // We expect to have to rebuild these when the window is resized - however,
+    // we're going to ignore that for this example.
 
-
-    // We're going to defer the construction of our swapchain, extent, image
-    // views, and framebuffers until the main loop, because we will need to
-    // repeat it whenever the window resizes. For now, we leave them empty.
+    // A swapchain is effectively a chain of images (commonly two) that will be
+    // displayed to the screen. While one is being displayed, we can draw to
+    // one of the others.
     //
-    // We're using an option containing a tuple so that we can drop all four
-    // items simultaneously.
-    // We also take advantage of type inference by withholding the types of
-    // each tuple member at this point.
-    let mut swapchain_stuff : Option<(_, _, _, _)> = None;
+    // In a rare instance of the API creating resources for you, the backbuffer
+    // contains the actual images that make up the swapchain. We'll create
+    // image views and framebuffers from these next.
+    //
+    // We also want to store the swapchain's extent, which tells us how big
+    // each image is.
 
-    let mut rebuild_swapchain = false;
+    // SwapchainConfig
+    // {
+    //     present_mode: Fifo,
+    //     format: Bgra8Srgb,
+    //     extent: Extent2D { width: 256, height: 256 },
+    //     image_count: 2,
+    //     image_layers: 1,
+    //     image_usage: COLOR_ATTACHMENT
+    //  }
+    let swap_config = SwapchainConfig::from_caps(&caps, surface_colour_format);
+
+    // Extent
+    // {
+    //     width: 256,
+    //     height: 256,
+    //     depth: 1
+    // }
+    let extent = swap_config.extent.to_extent();
+
+
+    let (mut swapchain, backbuffer) = device.create_swapchain(&mut surface, swap_config, None);
+
+    // We can think of the image as just the raw binary of the literal image
+    // with metadata about the format.
+    //
+    // Accessing the image must be done through an image view - which is more or
+    // less a sub-range of the base image. For example, it could be one 2D slice
+    // of a 3D texture. In many cases, the view will comprise the whole image.
+    // We can also use an image view to swizzle or reinterpret the image format.
+    //
+    // Framebuffers bind certain image views to certain attachments. So for
+    // example, if a render pass requires one colour attachement and one depth
+    // attachment - the framebuffer chooses specific image views for each one.
+    //
+    // Here we create an image view and a framebuffer for each image in our
+    // swapchain.
+
+    let (frame_views, framebuffers) = match backbuffer {
+        // This arm is currently only used by the OpenGL backend,
+        // which supplies an opaque framebuffer instead of giving us control
+        // over individual images.
+        Backbuffer::Framebuffer(fbo) => (vec![], vec![fbo]),
+        Backbuffer::Images(images) => {
+            let colour_range = SubresourceRange {
+                aspects: Aspects::COLOR,
+                levels: 0..1,
+                layers: 0..1,
+            };
+
+
+
+            let image_views = images.iter()
+                                    .map(|image| {
+                                        device.create_image_view(image,
+                                                                 ViewKind::D2,
+                                                                 surface_colour_format,
+                                                                 Swizzle::NO,
+                                                                 colour_range.clone()).unwrap()
+                                    })
+                                    .collect::<Vec<_>>();
+            let fbos = image_views.iter()
+                                  .map(|image_view| {
+                                    device.create_framebuffer(&render_pass, vec![image_view], extent)
+                                          .unwrap()
+                                  }).collect();
+            (image_views, fbos)
+        }
+    };
+
+    // The frame semaphore is used to allow us to wait for an image to be ready
+    // before attempting to draw on it.
+    let frame_semaphore = device.create_semaphore();
+
+    // The frame fence is used to allow us to wait until our draw commands have
+    // finished before attempting to display the image.
+    let frame_fence = device.create_fence(false);
 
     'main: loop {
         let mut quitting = false;
@@ -173,90 +285,15 @@ fn main() {
                         },
                         ..
                     } => quitting = true,
-                    // Set the rebuild flag if the window resizes.
-                    WindowEvent::Resized(_) => rebuild_swapchain = true,
                     _ => ()
                 }
 
             }
         });
 
-        if (rebuild_swapchain || quitting) && swapchain_stuff.is_some() {
-            // Take ownership of swapchain_stuff contents.
-            let (swapchain, _extent, frame_views, framebuffers) = swapchain_stuff.take().unwrap();
-
-            // Wait for all queues to be idle and reset the comand pool, so that
-            // we know no commands are being executed while we destroy the
-            // swapchain.
-            device.wait_idle().unwrap();
-            command_pool.reset();
-
-            for framebuffer in framebuffers {
-                device.destroy_framebuffer(framebuffer);
-            }
-
-            for image_view in frame_views {
-                device.destroy_image_view(image_view);
-            }
-
-            device.destroy_swapchain(swapchain);
-        }
-
         if quitting {
             break 'main;
         }
-
-        if swapchain_stuff.is_none() {
-            rebuild_swapchain = false;
-            let (caps, _, _) = surface.compatibility(physical_device);
-
-            // Here we just create the swapchain, image views, and framebuffers
-            // like we did in part 00, and store them in swapchain_stuff.
-            let swap_config = SwapchainConfig::from_caps(&caps, surface_colour_format);
-            let extent = swap_config.extent.to_extent();
-            let (swapchain, backbuffer) = device.create_swapchain(&mut surface, swap_config, None);
-
-            let (frame_views, framebuffers) = match backbuffer {
-                Backbuffer::Images(images) => {
-                    let color_range = SubresourceRange {
-                        aspects: Aspects::COLOR,
-                        levels: 0..1,
-                        layers: 0..1,
-                    };
-
-                    let image_views = images
-                        .iter()
-                        .map(|image| {
-                            device
-                                .create_image_view(
-                                    image,
-                                    ViewKind::D2,
-                                    surface_colour_format,
-                                    Swizzle::NO,
-                                    color_range.clone(),
-                                ).unwrap()
-                        }).collect::<Vec<_>>();
-
-                    let fbos = image_views
-                        .iter()
-                        .map(|image_view| {
-                            device
-                                .create_framebuffer(&render_pass, vec![image_view], extent)
-                                .unwrap()
-                        }).collect();
-
-                    (image_views, fbos)
-                }
-                Backbuffer::Framebuffer(fbo) => (Vec::new(), vec![fbo]),
-            };
-
-            swapchain_stuff = Some((swapchain, extent, frame_views, framebuffers));
-        }
-
-        // To access the swapchain, we need to get a mutable reference to the
-        // contents of swapchain_stuff. We know it's safe to unwrap because we just
-        // checked it wasn't `None`.
-        let (swapchain, extent, _frame_views, framebuffers) = swapchain_stuff.as_mut().unwrap();
 
         // Begin rendering.
         //
@@ -342,8 +379,16 @@ fn main() {
     device.destroy_graphics_pipeline(pipeline);
     device.destroy_pipeline_layout(pipeline_layout);
 
+    for framebuffer in framebuffers {
+        device.destroy_framebuffer(framebuffer);
+    }
+
+    for image_view in frame_views {
+        device.destroy_image_view(image_view);
+    }
 
     device.destroy_render_pass(render_pass);
+    device.destroy_swapchain(swapchain);
 
     device.destroy_shader_module(vertex_shader_module);
     device.destroy_shader_module(fragment_shader_module);

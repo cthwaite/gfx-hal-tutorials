@@ -30,8 +30,8 @@ use gfx_hal::{
 use winit::{Event, EventsLoop, KeyboardInput, VirtualKeyCode, WindowBuilder, WindowEvent};
 
 static WIN_TITLE : &'static str = "Part 01: Resizing";
-static VERT_SPIRV : &'static [u8] = include_bytes!("../assets/gen/shaders/part00.vert.spv");
-static FRAG_SPIRV : &'static [u8] = include_bytes!("../assets/gen/shaders/part00.frag.spv");
+static VERT_SPIRV : &'static [u8] = include_bytes!("../../assets/gen/shaders/part00.vert.spv");
+static FRAG_SPIRV : &'static [u8] = include_bytes!("../../assets/gen/shaders/part00.frag.spv");
 
 fn main() {
     let mut events_loop = EventsLoop::new();
