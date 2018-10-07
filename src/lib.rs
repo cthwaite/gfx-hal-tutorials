@@ -9,4 +9,5 @@ extern crate gfx_hal;
 extern crate winit;
 
 pub mod prelude;
+pub mod utils;
 pub use gfx_backend as backend;
