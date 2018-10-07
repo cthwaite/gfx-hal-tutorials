@@ -1,11 +1,9 @@
-extern crate winit;
-
-use winit::{Event, EventsLoop, KeyboardInput, VirtualKeyCode, WindowBuilder, WindowEvent};
-
+extern crate haltut;
+use haltut::prelude::*;
 
 fn main() {
     let mut events_loop = EventsLoop::new();
-    let window = WindowBuilder::new()
+    let _window = WindowBuilder::new()
                     .with_title("Part 00: Triangle")
                     .with_dimensions((256, 256).into())
                     .with_decorations(false)

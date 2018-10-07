@@ -4,8 +4,8 @@ use haltut::prelude::*;
 use haltut::backend;
 
 static WIN_TITLE : &'static str = "Part 02: Vertex Buffers";
-static VERT_SPIRV : &'static [u8] = include_bytes!("../assets/gen/shaders/part02.vert.spv");
-static FRAG_SPIRV : &'static [u8] = include_bytes!("../assets/gen/shaders/part02.frag.spv");
+static VERT_SPIRV : &'static [u8] = include_bytes!("../../assets/gen/shaders/part02.vert.spv");
+static FRAG_SPIRV : &'static [u8] = include_bytes!("../../assets/gen/shaders/part02.frag.spv");
 
 // repr(C) ensures deterministic layout in memory.
 #[derive(Clone, Copy, Debug)]

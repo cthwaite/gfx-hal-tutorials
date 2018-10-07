@@ -1,33 +1,6 @@
-#[cfg(windows)]
-extern crate gfx_backend_dx12 as backend;
-#[cfg(target_os = "macos")]
-extern crate gfx_backend_metal as backend;
-#[cfg(all(unix, not(target_os = "macos")))]
-extern crate gfx_backend_vulkan as backend;
-
-extern crate gfx_hal;
-extern crate winit;
-
-// There are a lot of imports - best to just accept it.
-use gfx_hal::{
-    command::{ClearColor, ClearValue},
-    format::{Aspects, ChannelType, Format, Swizzle},
-    image::{Access, Layout, SubresourceRange, ViewKind},
-    pass::{
-        Attachment, AttachmentLoadOp, AttachmentOps, AttachmentStoreOp, Subpass, SubpassDependency,
-        SubpassDesc, SubpassRef,
-    },
-    pool::CommandPoolCreateFlags,
-    pso::{
-        BlendState, ColorBlendDesc, ColorMask, EntryPoint, GraphicsPipelineDesc, GraphicsShaderSet,
-        PipelineStage, Rasterizer, Rect, Viewport,
-    },
-    queue::Submission,
-    Backbuffer, Device, FrameSync, Graphics, Instance, Primitive, Surface, SwapImageIndex,
-    Swapchain, SwapchainConfig,
-};
-
-use winit::{Event, EventsLoop, KeyboardInput, VirtualKeyCode, WindowBuilder, WindowEvent};
+extern crate haltut;
+use haltut::prelude::*;
+use haltut::backend;
 
 static WIN_TITLE : &'static str = "Part 01: Resizing";
 static VERT_SPIRV : &'static [u8] = include_bytes!("../../assets/gen/shaders/part00.vert.spv");
