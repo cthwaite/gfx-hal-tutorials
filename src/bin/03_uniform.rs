@@ -404,8 +404,15 @@ fn main() {
         //
         command_pool.reset();
 
-        let frame_index: SwapImageIndex = swapchain.acquire_image(!0, FrameSync::Semaphore(&frame_semaphore))
-                                                   .expect("Failed to acquire frame!");
+        let frame_index: SwapImageIndex = {
+            match swapchain.acquire_image(!0, FrameSync::Semaphore(&frame_semaphore)) {
+                Ok(i) => i,
+                Err(_) => {
+                    rebuild_swapchain = true;
+                    continue;
+                }
+            }
+        };
 
         let finished_command_buffer = {
             let mut command_buffer = command_pool.acquire_command_buffer(false);
